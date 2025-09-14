@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Srihesh Kothapalli :: Deconstructed IDE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&family=Space+Mono:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --background: #0d1117;
+            --primary: #c9d1d9;
+            --secondary: #8b949e;
+            --accent: #58a6ff;
+            --keyword: #ff7b72;
+            --string: #a5d6ff;
+            --comment: #8b949e;
+            --border: #30363d;
+            --panel: rgba(13,17,23,0.7);
+            --transition-fast: 180ms cubic-bezier(.4,0,.2,1);
+        }
+        /* Light theme variables */
+        .theme-light {
+            --background: #f5f7fa;
+            --primary: #1c2430;
+            --secondary: #5a6675;
+            --accent: #0b63d1;
+            --keyword: #c41d7f;
+            --string: #0d6c94;
+            --comment: #6b7785;
+            --border: #d0d7de;
+            --panel: rgba(255,255,255,0.75);
+        }
+        body {
+            background-color: var(--background);
+            color: var(--primary);
+            font-family: 'Roboto Mono', monospace;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .profile-photo {
+            width: 140px; height: 140px; border: 1px solid var(--border); border-radius: 10px; float: right; margin: 0 0 18px 28px; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,.4); background: linear-gradient(135deg,#1f2933,#111923);
+            display:flex; align-items:center; justify-content:center; font-size:.65rem; letter-spacing:.5px; text-align:center; color:var(--secondary);
+        }
+        .profile-photo img { width:100%; height:100%; object-fit:cover; display:block; }
+        #background-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
+            background-size: 30px 30px;
+            animation: pan 60s linear infinite;
+            z-index: -1;
+        }
+        @keyframes pan { from { background-position: 0 0; } to { background-position: -300px -300px; } }
+        #main-container {
+            width: 90%;
+            max-width: 1200px;
+            height: 85vh;
+            display: flex;
+            gap: 30px;
+        }
+        #nav-container {
+            width: 280px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            position: relative;
+            z-index: 2;
+        }
+        .nav-card {
+            position: relative;
+            width: 100%;
+            padding: 14px 18px;
+            background: rgba(22, 27, 34, 0.75);
+            border: 1px solid var(--border);
+            backdrop-filter: blur(5px);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background .25s var(--transition-fast), box-shadow .3s ease, border-color .3s ease, transform .25s ease;
+            font-size: 0.9rem;
+        }
+        .nav-card:before {
+            content: '>';
+            margin-right: 10px;
+            color: var(--secondary);
+        }
+        .nav-card.active {
+            border-color: var(--accent);
+            color: var(--string);
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.3);
+        }
+        .nav-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .nav-card.active:before { color: var(--accent); }
+        #content-container {
+            flex-grow: 1;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 30px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 1;
+        }
+        #content-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        #content-container::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #content-container::-webkit-scrollbar-thumb {
+            background-color: var(--border);
+            border-radius: 4px;
+        }
+        #content-container::-webkit-scrollbar-thumb:hover {
+            background-color: var(--secondary);
+        }
+        .content-section { display:none; opacity:0; transform:translateY(10px); }
+        .content-section[aria-hidden="false"] { display:block; }
+        .content-section.enter { animation: secIn .45s var(--transition-fast) forwards; }
+    .content-section.exit { animation: secOut .32s var(--transition-fast) forwards; position:absolute; inset:0; pointer-events:none; }
+        @keyframes secIn { from { opacity:0; transform:translateY(12px) scale(.98);} to { opacity:1; transform:translateY(0) scale(1);} }
+        @keyframes secOut { from { opacity:1; transform:translateY(0) scale(1);} to { opacity:0; transform:translateY(-6px) scale(.98);} }
+        .code-line { line-height: 1.8; white-space: pre-wrap; }
+        .comment { color: var(--comment); }
+        .keyword { color: var(--keyword); }
+        .string { color: var(--string); }
+        .variable { color: var(--primary); }
+        .function { color: #d2a8ff; }
+        .number { color: #79c0ff; }
+        h1.main-title { font-family: 'Space Mono', monospace; font-size: 2rem; margin: 0 0 20px 0; }
+        .interactive-link {
+            text-decoration: none;
+            color: inherit;
+            display: inline-block;
+            transition: transform 0.2s ease, color 0.2s ease;
+        }
+        .interactive-link:hover {
+            transform: translateX(5px);
+            color: var(--accent);
+        }
+        .interactive-link:hover .function, .interactive-link:hover .string {
+             color: var(--accent);
+        }
+       /* Skill meters */
+       .skill-meter { position: relative; height:6px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden; margin-top:4px; }
+       .skill-meter span { position:absolute; inset:0; background:linear-gradient(90deg,var(--accent),#7fd1ff); width:0%; transition:width 1.2s ease; }
+       .skill-item { margin-bottom:10px; }
+       .skill-item .label { display:flex; justify-content:space-between; font-size:.7rem; letter-spacing:.5px; color:var(--secondary); }
+       .skills-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); font-size:.9rem; line-height:1.4; }
+       /* Floating Next Section Button */
+       #nextSectionBtn { position: fixed; right: 18px; bottom: 18px; background: rgba(22,27,34,.85); color: var(--accent); border:1px solid var(--border); padding: 10px 14px; font-family: inherit; font-size:.75rem; border-radius: 6px; cursor:pointer; display:flex; align-items:center; gap:6px; box-shadow:0 6px 18px -4px rgba(0,0,0,.6); backdrop-filter: blur(6px); letter-spacing:.5px; }
+       #nextSectionBtn:hover { color:#fff; border-color: var(--accent); }
+       #nextSectionBtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+       #nextSectionBtn[hidden] { display:none; }
+        #nextSectionBtn .progress { font-weight:600; color:var(--secondary); }
+        #themeToggle { position:fixed; left:18px; bottom:18px; background:rgba(22,27,34,.85); color:var(--accent); border:1px solid var(--border); padding:8px 12px; font-size:.75rem; border-radius:6px; cursor:pointer; letter-spacing:.5px; backdrop-filter: blur(6px); }
+        .theme-light #nextSectionBtn, .theme-light #themeToggle { background:rgba(255,255,255,.85); }
+        #themeToggle:hover { color:#fff; border-color:var(--accent); }
+    </style>
+</head>
+<body>
+    <div id="background-grid"></div>
+    <div id="main-container">
+        <nav id="nav-container"></nav>
+        <main id="content-container">
+            <div id="info" class="content-section">
+                <h1 class="main-title">Srihesh Kothapalli</h1>
+                
+                    <div class="profile-photo" aria-label="Profile photo">
+                        <img src="assets/me1.jpg" alt="Photo of Srihesh Kothapalli" onerror="this.parentElement.innerHTML='Add me1.jpg in assets folder';" />
+                </div>
+                <p style="line-height:1.6; font-size:.95rem; margin-top:0;">
+                    I'm a student and aspiring software developer who enjoys building practical web
+                    and data projects. I’m especially interested in how AI and cybersecurity can
+                    solve real problems. I like learning by doing, keeping things simple, and
+                    steadily improving my skills.
+                </p>
+            </div>
+            <div id="edu" class="content-section">
+                <h2 style="margin-top:0; font-size:1.1rem;">Education</h2>
+                <ul style="line-height:1.6; padding-left:18px;">
+                    <li><strong>B.Tech. Computer Science</strong> – Indian Institute of Information Technology, Sri City (2023 – Present)</li>
+                    <li><strong>Secondary Education</strong> – Sasi College (Grade: 95.2%)</li>
+                    <li><strong>Primary Education</strong> – Dr.K.K.R school (Marks: 600)</li>
+                </ul>
+            </div>
+            <div id="skills" class="content-section">
+                <h2 style="margin-top:0; font-size:1.1rem;">Skills</h2>
+                <div class="skills-grid">
+                    <div>
+                        <strong>Backend</strong>
+                        <ul class="skill-list" style="padding-left:16px; margin:6px 0;">
+                            <li>Node.js</li>
+                            <li>Express.js</li>
+                            <li>Python</li>
+                            <li>Flask</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong>Databases</strong>
+                        <ul class="skill-list" style="padding-left:16px; margin:6px 0;">
+                            <li>MongoDB</li>
+                            <li>SQL</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong>AI & Data</strong>
+                        <ul class="skill-list" style="padding-left:16px; margin:6px 0;">
+                            <li>Machine Learning</li>
+                            <li>Pandas</li>
+                            <li>Generative AI</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <strong>Tools & Other</strong>
+                        <ul class="skill-list" style="padding-left:16px; margin:6px 0;">
+                            <li>Docker</li>
+                            <li>REST APIs</li>
+                            <li>GitHub</li>
+                            <li>Cybersecurity (Basics)</li>
+                        </ul>
+                    </div>
+                </div>
+                
+            </div>
+            <div id="projects" class="content-section">
+                <h2 style="margin-top:0; font-size:1.1rem;">Projects</h2>
+                <ul style="line-height:1.6; padding-left:18px; font-size:.95rem;">
+                    <li><strong>RELABTeams Platform</strong> – Collaborative platform built with Node.js and MongoDB for managing team workflows. <a href="https://github.com/Srihesh/project" target="_blank" rel="noopener" style="color:var(--accent);">Repo</a></li>
+                    <li><strong>Automated PDF Toolkit</strong> – Python & Docker based scripts to process and extract data from PDF files faster. <a href="https://github.com/Srihesh/Glitchnetcult" target="_blank" rel="noopener" style="color:var(--accent);">Repo</a></li>
+                    <li><strong>Heart Disease Predictor</strong> – Machine learning model (Scikit-learn) to help analyze health-related risk factors. <a href="https://github.com/Srihesh/Heart-Disease_Prediction" target="_blank" rel="noopener" style="color:var(--accent);">Repo</a></li>
+                </ul>
+            </div>
+             <div id="achievements" class="content-section">
+                <h2 style="margin-top:0; font-size:1.1rem;">Achievements & Certifications</h2>
+                <ul style="line-height:1.6; padding-left:18px; font-size:.95rem;">
+                    <li>Participant – Adobe India Hackathon <a href="https://unstop.com/certificate-preview/86e5e765-890d-49a3-9eb9-ec08bf8e9321?utm_campaign=site-emails&utm_medium=d2c-automated&utm_source=wow-look-at-your-certificate-adobe-india-hackathon" target="_blank" rel="noopener" style="color:var(--accent);">Certificate</a></li>
+                    <li>Python (Basic) – HackerRank Certification <a href="https://www.hackerrank.com/certificates/69fc2e182252" target="_blank" rel="noopener" style="color:var(--accent);">Verify</a></li>
+                    <li>Cyber Security & Geo-data – ISRO Certification <a href="https://isrolms.iirs.gov.in/mod/customcert/verify_certificate.php?code=4d7CBoOnMq&qrcode=1" target="_blank" rel="noopener" style="color:var(--accent);">Verify</a></li>
+                    <li>Generative AI Fundamentals – Databricks Accreditation <a href="https://credentials.databricks.com/0f1f474b-97e5-48aa-adcf-e055b0285214#acc.hvzul0AB" target="_blank" rel="noopener" style="color:var(--accent);">Credential</a></li>
+                </ul>
+            </div>
+            <div id="contact" class="content-section">
+                <h2 style="margin-top:0; font-size:1.1rem;">Contact</h2>
+                <p style="line-height:1.6; font-size:.95rem;">Feel free to reach out or view my work:</p>
+                <ul style="line-height:1.6; padding-left:18px; font-size:.95rem;">
+                    <li><strong>Email:</strong> <a href="mailto:sriheshk06@gmail.com" class="interactive-link" style="color:var(--accent);">sriheshk06@gmail.com</a></li>
+                    <li><strong>GitHub:</strong> <a href="https://github.com/Srihesh" target="_blank" rel="noopener" class="interactive-link" style="color:var(--accent);">github.com/Srihesh</a></li>
+                    <li><strong>Resume:</strong> <a href="./SriheshKothapalli.pdf" target="_blank" rel="noopener" class="interactive-link" style="color:var(--accent);">Download PDF</a></li>
+                </ul>
+            </div>
+        </main>
+    </div>
+
+    <button id="nextSectionBtn" type="button" hidden aria-label="Go to next section"><span class="label">Next ▶</span> <span class="progress" aria-hidden="true"></span></button>
+    <button id="themeToggle" type="button" aria-pressed="false" aria-label="Toggle light mode">Light</button>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const navContainer = document.getElementById('nav-container');
+            const contentContainer = document.getElementById('content-container');
+            const sections = [
+                { id: 'info', title: 'About Me' },
+                { id: 'edu', title: 'Education' },
+                { id: 'skills', title: 'Skills' },
+                { id: 'projects', title: 'Projects' },
+                { id: 'achievements', title: 'Achievements' },
+                { id: 'contact', title: 'Contact' },
+            ];
+            let currentIndex = 0;
+            const nextBtn = document.getElementById('nextSectionBtn');
+            const themeBtn = document.getElementById('themeToggle');
+            const storageKey = 'portfolio:lastSection';
+            const themeKey = 'portfolio:theme';
+            // Enhance skills with random percentage meters
+            function initSkillMeters(){
+                const lists = document.querySelectorAll('#skills .skill-list');
+                lists.forEach(list=>{
+                    list.querySelectorAll('li').forEach(li=>{
+                        if(li.dataset.enhanced) return; // avoid duplicating
+                        li.dataset.enhanced = '1';
+                        const label = li.textContent.trim();
+                        // Random percentage between 60 and 95
+                        const pct = Math.floor(60 + Math.random()*35);
+                        li.innerHTML = `<div class="skill-item"><div class="label"><span>${label}</span><span>${pct}%</span></div><div class="skill-meter" aria-label="${label} proficiency ${pct} percent"><span style="--target:${pct};"></span></div></div>`;
+                    });
+                });
+                // animate after short delay so transitions fire
+                requestAnimationFrame(()=>{
+                    document.querySelectorAll('.skill-meter span').forEach(span=>{
+                        const pct = span.style.getPropertyValue('--target');
+                        span.style.width = pct+'%';
+                    });
+                });
+            }
+
+            sections.forEach((section) => {
+                const card = document.createElement('div');
+                card.className = 'nav-card';
+                card.dataset.target = section.id;
+                card.textContent = section.title;
+                card.setAttribute('role','button');
+                card.setAttribute('tabindex','0');
+                card.setAttribute('aria-controls', section.id);
+                navContainer.appendChild(card);
+            });
+
+            const navCards = document.querySelectorAll('.nav-card');
+
+            let animating = false;
+            let exitTimer = null;
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            function switchContent(targetId, {force=false} = {}) {
+                // Allow navigation even if animating; we will cancel prior timeout
+                const newIndex = sections.findIndex(s => s.id === targetId);
+                if (newIndex === -1) return;
+                if (!force && newIndex === currentIndex) return; // already there
+                const currentId = sections[currentIndex]?.id;
+                const incoming = document.getElementById(targetId);
+                const outgoing = document.getElementById(currentId);
+                if (exitTimer) { clearTimeout(exitTimer); exitTimer = null; }
+                animating = !reduceMotion; // only lock if animating
+                console.log('Switching to section:', targetId);
+                // Prepare states
+                if (outgoing) {
+                    outgoing.classList.remove('enter');
+                    if (!reduceMotion) {
+                        outgoing.classList.add('exit');
+                        // hide after exit animation completes
+                        exitTimer = setTimeout(()=>{
+                            outgoing.classList.remove('exit');
+                            outgoing.setAttribute('aria-hidden','true');
+                        }, 310);
+                    } else {
+                        outgoing.setAttribute('aria-hidden','true');
+                    }
+                }
+                incoming.classList.remove('exit');
+                if (!reduceMotion) incoming.classList.add('enter'); else incoming.classList.remove('enter');
+                incoming.setAttribute('aria-hidden','false');
+                // nav highlight
+                navCards.forEach(c => c.classList.remove('active'));
+                document.querySelector(`.nav-card[data-target="${targetId}"]`).classList.add('active');
+                currentIndex = newIndex;
+                updateNextButton();
+                localStorage.setItem(storageKey, targetId);
+                if (!reduceMotion) {
+                    setTimeout(()=>{ animating=false; }, 360);
+                } else {
+                    animating=false;
+                }
+                contentContainer.scrollTo({ top:0, behavior:'smooth' });
+            }
+
+            navContainer.addEventListener('click', (e) => {
+                if (e.target.classList.contains('nav-card')) {
+                    switchContent(e.target.dataset.target);
+                }
+            });
+
+            // Keyboard activation
+            navContainer.addEventListener('keydown', (e) => {
+                const card = e.target.closest('.nav-card');
+                if (!card) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    switchContent(card.dataset.target);
+                }
+                // Arrow navigation
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const next = card.nextElementSibling || navContainer.firstElementChild;
+                    next.focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prev = card.previousElementSibling || navContainer.lastElementChild;
+                    prev.focus();
+                }
+            });
+
+            // Removed 3D hover rotation for stability and accessibility
+
+            // Show/hide floating next button near bottom
+            function updateNextButtonVisibility() {
+                const nearBottom = contentContainer.scrollTop + contentContainer.clientHeight >= contentContainer.scrollHeight - 40;
+                if (nearBottom) {
+                    nextBtn.hidden = false;
+                } else {
+                    nextBtn.hidden = true;
+                }
+            }
+            contentContainer.addEventListener('scroll', updateNextButtonVisibility, { passive:true });
+
+            function updateNextButton() {
+                const nextIndex = (currentIndex + 1) % sections.length;
+                const isLast = currentIndex === sections.length - 1;
+                nextBtn.querySelector('.label').textContent = isLast ? 'Restart ▲' : 'Next ▶';
+                nextBtn.setAttribute('aria-label', isLast ? 'Restart from first section' : `Go to ${sections[nextIndex].title}`);
+                nextBtn.querySelector('.progress').textContent = `${currentIndex+1}/${sections.length}`;
+            }
+            nextBtn.addEventListener('click', () => {
+                const isLast = currentIndex === sections.length - 1;
+                const nextId = isLast ? sections[0].id : sections[currentIndex + 1].id;
+                // directly show new section
+                const targetId = nextId;
+                const immediate = sections.findIndex(s=>s.id===targetId) === currentIndex ? null : targetId;
+                if (immediate) switchContent(immediate); else updateNextButton();
+                nextBtn.hidden = true;
+            });
+            // Profile photo now statically included as assets/me1.jpg (dynamic fetch removed)
+
+            // THEME --------------------------------------------------
+            function applyTheme(mode) {
+                if (mode === 'light') {
+                    document.documentElement.classList.add('theme-light');
+                    themeBtn.setAttribute('aria-pressed','true');
+                    themeBtn.textContent = 'Dark';
+                    themeBtn.setAttribute('aria-label','Toggle dark mode');
+                } else {
+                    document.documentElement.classList.remove('theme-light');
+                    themeBtn.setAttribute('aria-pressed','false');
+                    themeBtn.textContent = 'Light';
+                    themeBtn.setAttribute('aria-label','Toggle light mode');
+                }
+            }
+            const savedTheme = localStorage.getItem(themeKey) || 'dark';
+            applyTheme(savedTheme);
+            themeBtn.addEventListener('click', () => {
+                const nowLight = !document.documentElement.classList.contains('theme-light');
+                applyTheme(nowLight ? 'light' : 'dark');
+                localStorage.setItem(themeKey, nowLight ? 'light' : 'dark');
+            });
+
+            // Initialize sections with aria-hidden
+            document.querySelectorAll('.content-section').forEach((sec,i)=>{
+                sec.setAttribute('aria-hidden', i===0 ? 'false':'true');
+            });
+            navContainer.setAttribute('role','list');
+            navContainer.querySelectorAll('.nav-card').forEach(card=>card.setAttribute('role','listitem'));
+            // Restore last visited section if exists
+            const savedSection = localStorage.getItem(storageKey);
+            if (savedSection && sections.some(s=>s.id===savedSection)) {
+                // Show saved immediately without animation then mark currentIndex
+                document.getElementById(sections[0].id).setAttribute('aria-hidden','true');
+                currentIndex = sections.findIndex(s=>s.id===savedSection);
+                const el = document.getElementById(savedSection);
+                el.setAttribute('aria-hidden','false');
+                el.classList.add('enter');
+                navContainer.querySelectorAll('.nav-card').forEach(c=>c.classList.remove('active'));
+                document.querySelector(`.nav-card[data-target="${savedSection}"]`).classList.add('active');
+                updateNextButton();
+            } else {
+                // show first without animation
+                document.getElementById(sections[0].id).setAttribute('aria-hidden','false');
+                document.getElementById(sections[0].id).classList.add('enter');
+                currentIndex = 0;
+                updateNextButton();
+            }
+            initSkillMeters();
+        });
+    </script>
+</body>
+</html>
+
